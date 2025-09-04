@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 
 namespace FlowForge.Models
 {
@@ -7,11 +6,10 @@ namespace FlowForge.Models
     {
         public Guid Id { get; set; }
         public string Name { get; set; }
-        public string Status { get; set; }
-        public string AssignedTo { get; set; }   // ✅ New: user email or username
+        public string Status { get; set; } = "In Progress";
+        public string AssignedTo { get; set; }  // email or user
+        public string Notes { get; set; }       // ✅ new field for notes
         public DateTime DateCreated { get; set; }
         public DateTime LastModified { get; set; }
-        public List<string> Notes { get; set; } = new List<string>();        // ✅ New: notes history
-        
     }
 }

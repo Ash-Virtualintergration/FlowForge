@@ -1,5 +1,4 @@
-﻿using FlowForge;
-using FlowForge.Models;
+﻿using FlowForge.Models;
 using FlowForge.Services;
 using MaterialSkin;
 using MaterialSkin.Controls;
@@ -9,6 +8,7 @@ using System.Drawing;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Windows.Forms.DataVisualization.Charting;
 
 namespace FlowForge
 {
@@ -31,16 +31,27 @@ namespace FlowForge
 
         // UI – Workflows
         private readonly ListView _lvWorkflows = new ListView();
-        private readonly Button _btnAdd = new Button(); // acts as FAB
+        private readonly Button _btnAdd = new Button(); // FAB
         private readonly Button _btnDelete = new Button();
 
-        // UI – Dashboard (3 panels as cards)
+        // FAB Animation
+        private readonly Timer _fabAnimationTimer = new Timer();
+        private int _fabPulseStep = 0;
+        private bool _fabGrowing = true;
+
+        // UI – Dashboard (cards)
         private readonly Panel _cardTotal = new Panel();
         private readonly Panel _cardInProgress = new Panel();
         private readonly Panel _cardCompleted = new Panel();
         private readonly Label _lblTotalNumber = new Label();
         private readonly Label _lblInProgressNumber = new Label();
         private readonly Label _lblCompletedNumber = new Label();
+        private readonly Label _lblTotalPercent = new Label();
+        private readonly Label _lblInProgressPercent = new Label();
+        private readonly Label _lblCompletedPercent = new Label();
+
+        // UI – Dashboard Chart
+        private readonly Chart _chartStatus = new Chart();
 
         // UI – Settings
         private readonly CheckBox _switchDark = new CheckBox { Text = "Use Dark Theme", AutoSize = true };
@@ -132,44 +143,86 @@ namespace FlowForge
             int cardHeight = 160;
             int left = 24;
 
-            SetupCardPanel(_cardTotal, _lblTotalNumber, "Total Workflows", new Point(left, 24), cardWidth, cardHeight);
-            SetupCardPanel(_cardInProgress, _lblInProgressNumber, "In Progress", new Point(left + cardWidth + 24, 24), cardWidth, cardHeight);
-            SetupCardPanel(_cardCompleted, _lblCompletedNumber, "Completed", new Point(left + (cardWidth + 24) * 2, 24), cardWidth, cardHeight);
+            SetupCardPanel(_cardTotal, _lblTotalNumber, _lblTotalPercent, "Total Workflows", new Point(left, 24), cardWidth, cardHeight, Color.FromArgb(66, 135, 245), Color.FromArgb(33, 80, 180));
+            SetupCardPanel(_cardInProgress, _lblInProgressNumber, _lblInProgressPercent, "In Progress", new Point(left + cardWidth + 24, 24), cardWidth, cardHeight, Color.FromArgb(245, 166, 35), Color.FromArgb(200, 120, 20));
+            SetupCardPanel(_cardCompleted, _lblCompletedNumber, _lblCompletedPercent, "Completed", new Point(left + (cardWidth + 24) * 2, 24), cardWidth, cardHeight, Color.FromArgb(40, 167, 69), Color.FromArgb(20, 100, 40));
+
+            _chartStatus.Dock = DockStyle.Bottom;
+            _chartStatus.Height = 280;
+
+            var chartArea = new ChartArea("Main");
+            chartArea.BackColor = Color.Transparent;
+            _chartStatus.ChartAreas.Add(chartArea);
+
+            var series = new Series("Workflows")
+            {
+                ChartType = SeriesChartType.Pie,
+                Font = new Font("Segoe UI", 12, FontStyle.Bold),
+                IsValueShownAsLabel = true
+            };
+            _chartStatus.Series.Add(series);
+
+            _chartStatus.Legends.Add(new Legend("Legend")
+            {
+                Docking = Docking.Right,
+                Font = new Font("Segoe UI", 10, FontStyle.Regular)
+            });
 
             _tabDashboard.Controls.Add(_cardTotal);
             _tabDashboard.Controls.Add(_cardInProgress);
             _tabDashboard.Controls.Add(_cardCompleted);
+            _tabDashboard.Controls.Add(_chartStatus);
         }
 
-        private void SetupCardPanel(Panel panel, Label bigLabel, string smallText, Point location, int w, int h)
+        private void SetupCardPanel(Panel panel, Label bigLabel, Label percentLabel, string smallText, Point location, int w, int h, Color startColor, Color endColor)
         {
             panel.Size = new Size(w, h);
             panel.Location = location;
-            panel.BackColor = Color.White;
-            panel.BorderStyle = BorderStyle.FixedSingle;
+            panel.BorderStyle = BorderStyle.None;
             panel.Padding = new Padding(16);
 
+            panel.Paint += (s, e) =>
+            {
+                using (var brush = new System.Drawing.Drawing2D.LinearGradientBrush(panel.ClientRectangle, startColor, endColor, 45F))
+                {
+                    e.Graphics.FillRectangle(brush, panel.ClientRectangle);
+                }
+            };
+
             bigLabel.AutoSize = false;
-            bigLabel.Height = 64;
+            bigLabel.Height = 72;
             bigLabel.Dock = DockStyle.Top;
-            bigLabel.Font = new Font("Segoe UI", 36, FontStyle.Bold);
+            bigLabel.Font = new Font("Segoe UI", 40, FontStyle.Bold);
+            bigLabel.ForeColor = Color.White;
             bigLabel.TextAlign = ContentAlignment.MiddleLeft;
             bigLabel.Text = "0";
+
+            percentLabel.AutoSize = false;
+            percentLabel.Height = 28;
+            percentLabel.Dock = DockStyle.Top;
+            percentLabel.Font = new Font("Segoe UI", 12, FontStyle.Italic);
+            percentLabel.ForeColor = Color.White;
+            percentLabel.TextAlign = ContentAlignment.MiddleLeft;
+            percentLabel.Text = "0%";
 
             var smallLabel = new Label
             {
                 AutoSize = false,
-                Height = 24,
+                Height = 28,
                 Dock = DockStyle.Top,
-                Font = new Font("Segoe UI", 12, FontStyle.Regular),
+                Font = new Font("Segoe UI", 14, FontStyle.Regular),
+                ForeColor = Color.White,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Text = smallText
             };
 
             panel.Controls.Add(smallLabel);
+            panel.Controls.Add(percentLabel);
             panel.Controls.Add(bigLabel);
         }
+        #endregion
 
+        #region Workflows Tab
         private void BuildWorkflowsTab()
         {
             _tabWorkflows.Padding = new Padding(16);
@@ -184,14 +237,61 @@ namespace FlowForge
             _lvWorkflows.Columns.Add("Date Created", 160);
             _lvWorkflows.DoubleClick += LvWorkflows_DoubleClick;
 
-            _btnAdd.Text = "+";
-            _btnAdd.Font = new Font("Segoe UI", 18, FontStyle.Bold);
-            _btnAdd.Size = new Size(56, 56);
+            // FAB
+            _btnAdd.Text = "Create\nTask";
+            _btnAdd.Font = new Font("Segoe UI", 12, FontStyle.Bold);
+            _btnAdd.Size = new Size(120, 120);
             _btnAdd.FlatStyle = FlatStyle.Flat;
             _btnAdd.FlatAppearance.BorderSize = 0;
-            _btnAdd.BackColor = Color.FromArgb(46, 134, 171);
+            _btnAdd.BackColor = Color.FromArgb(0, 123, 255);
             _btnAdd.ForeColor = Color.White;
+            _btnAdd.Cursor = Cursors.Hand;
+
+            _btnAdd.Paint += (s, e) =>
+            {
+                using (var path = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    path.AddEllipse(0, 0, _btnAdd.Width, _btnAdd.Height);
+                    _btnAdd.Region = new Region(path);
+                }
+            };
+
+            _btnAdd.MouseEnter += (s, e) => _btnAdd.BackColor = Color.FromArgb(0, 105, 217);
+            _btnAdd.MouseLeave += (s, e) => _btnAdd.BackColor = Color.FromArgb(0, 123, 255);
             _btnAdd.Click += BtnAdd_Click;
+
+            // FAB Animation
+            _fabAnimationTimer.Interval = 50;
+            _fabAnimationTimer.Tick += (s, e) =>
+            {
+                int pulseRange = 10;
+                int stepSize = 2;
+
+                if (_fabGrowing)
+                {
+                    _fabPulseStep += stepSize;
+                    if (_fabPulseStep >= pulseRange) _fabGrowing = false;
+                }
+                else
+                {
+                    _fabPulseStep -= stepSize;
+                    if (_fabPulseStep <= 0) _fabGrowing = true;
+                }
+
+                _btnAdd.Invalidate();
+            };
+
+            _btnAdd.Paint += (s, e) =>
+            {
+                int glowSize = _fabPulseStep;
+                using (var glowBrush = new SolidBrush(Color.FromArgb(80, 0, 123, 255)))
+                {
+                    e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                    e.Graphics.FillEllipse(glowBrush, -glowSize / 2, -glowSize / 2, _btnAdd.Width + glowSize, _btnAdd.Height + glowSize);
+                }
+            };
+
+            Load += (s, e) => _fabAnimationTimer.Start();
 
             _btnDelete.Text = "Delete Selected";
             _btnDelete.Size = new Size(140, 36);
@@ -200,24 +300,26 @@ namespace FlowForge
             var bottomPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = 80
+                Height = 100
             };
             bottomPanel.Controls.Add(_btnDelete);
             bottomPanel.Controls.Add(_btnAdd);
 
-            _btnDelete.Location = new Point(16, 22);
-            _btnAdd.Location = new Point(bottomPanel.Width - _btnAdd.Width - 24, 12);
+            _btnDelete.Location = new Point(16, 30);
+            _btnAdd.Location = new Point(bottomPanel.Width - _btnAdd.Width - 24, 0);
             _btnAdd.Anchor = AnchorStyles.Right | AnchorStyles.Top;
 
             bottomPanel.Resize += (s, e) =>
             {
-                _btnAdd.Location = new Point(bottomPanel.ClientSize.Width - _btnAdd.Width - 24, 12);
+                _btnAdd.Location = new Point(bottomPanel.ClientSize.Width - _btnAdd.Width - 24, 0);
             };
 
             _tabWorkflows.Controls.Add(_lvWorkflows);
             _tabWorkflows.Controls.Add(bottomPanel);
         }
+        #endregion
 
+        #region Settings Tab
         private void BuildSettingsTab()
         {
             _tabSettings.Padding = new Padding(24);
@@ -233,7 +335,7 @@ namespace FlowForge
         }
         #endregion
 
-        #region Events & Actions
+        #region Events
         private void MainForm_Load(object sender, EventArgs e)
         {
             _settings = SettingsService.LoadSettings();
@@ -265,7 +367,6 @@ namespace FlowForge
                     UpdateDashboardCards();
                     ShowStatus("Workflow Saved Successfully");
 
-                    // ✅ Send email async
                     if (!string.IsNullOrEmpty(wf.AssignedTo))
                     {
                         Task.Run(() =>
@@ -309,7 +410,6 @@ namespace FlowForge
                     wf.LastModified = DateTime.Now;
                     wf.AssignedTo = dlg.ResultWorkflow.AssignedTo;
 
-                    // ✅ Async email if completed → assign to next user
                     if (!string.IsNullOrEmpty(wf.AssignedTo) &&
                         string.Equals(wf.Status, "Completed", StringComparison.OrdinalIgnoreCase))
                     {
@@ -389,6 +489,19 @@ namespace FlowForge
             _lblTotalNumber.Text = total.ToString();
             _lblInProgressNumber.Text = inProg.ToString();
             _lblCompletedNumber.Text = done.ToString();
+
+            _lblTotalPercent.Text = total > 0 ? "100%" : "0%";
+            _lblInProgressPercent.Text = total > 0 ? $"{(inProg * 100 / total)}%" : "0%";
+            _lblCompletedPercent.Text = total > 0 ? $"{(done * 100 / total)}%" : "0%";
+
+            var series = _chartStatus.Series["Workflows"];
+            series.Points.Clear();
+            if (total > 0)
+            {
+                series.Points.AddXY("In Progress", inProg);
+                series.Points.AddXY("Completed", done);
+                series.Points.AddXY("Other", total - (inProg + done));
+            }
         }
 
         private void ShowStatus(string message)

@@ -31,36 +31,53 @@
             // 
             // txtName
             // 
-            this.txtName.Location = new System.Drawing.Point(30, 30);
-            this.txtName.Size = new System.Drawing.Size(300, 23);
+            this.txtName.Location = new System.Drawing.Point(12, 38);
+            this.txtName.Name = "txtName";
+            this.txtName.Size = new System.Drawing.Size(300, 26);
+            this.txtName.TabIndex = 0;
             // 
             // cmbStatus
             // 
-            this.cmbStatus.Location = new System.Drawing.Point(30, 70);
-            this.cmbStatus.Size = new System.Drawing.Size(200, 23);
-            this.cmbStatus.Items.AddRange(new object[] { "Not Started", "In Progress", "Completed" });
-            // 
-            // lblAssignedTo
-            // 
-            this.lblAssignedTo.Text = "Assign To (Email):";
-            this.lblAssignedTo.Location = new System.Drawing.Point(30, 110);
-            this.lblAssignedTo.Size = new System.Drawing.Size(150, 23);
+            this.cmbStatus.Items.AddRange(new object[] {
+            "Not Started",
+            "In Progress",
+            "Completed"});
+            this.cmbStatus.Location = new System.Drawing.Point(12, 70);
+            this.cmbStatus.Name = "cmbStatus";
+            this.cmbStatus.Size = new System.Drawing.Size(200, 28);
+            this.cmbStatus.TabIndex = 1;
             // 
             // txtAssignedTo
             // 
-            this.txtAssignedTo.Location = new System.Drawing.Point(30, 140);
-            this.txtAssignedTo.Size = new System.Drawing.Size(300, 23);
+            this.txtAssignedTo.Location = new System.Drawing.Point(12, 136);
+            this.txtAssignedTo.Name = "txtAssignedTo";
+            this.txtAssignedTo.Size = new System.Drawing.Size(300, 26);
+            this.txtAssignedTo.TabIndex = 3;
+            // 
+            // lblAssignedTo
+            // 
+            this.lblAssignedTo.Location = new System.Drawing.Point(12, 110);
+            this.lblAssignedTo.Name = "lblAssignedTo";
+            this.lblAssignedTo.Size = new System.Drawing.Size(150, 23);
+            this.lblAssignedTo.TabIndex = 2;
+            this.lblAssignedTo.Text = "Assign To (Email):";
             // 
             // btnOk
             // 
+            this.btnOk.Location = new System.Drawing.Point(12, 181);
+            this.btnOk.Name = "btnOk";
+            this.btnOk.Size = new System.Drawing.Size(75, 23);
+            this.btnOk.TabIndex = 4;
             this.btnOk.Text = "OK";
-            this.btnOk.Location = new System.Drawing.Point(180, 190);
             this.btnOk.Click += new System.EventHandler(this.btnOk_Click);
             // 
             // btnCancel
             // 
+            this.btnCancel.Location = new System.Drawing.Point(104, 181);
+            this.btnCancel.Name = "btnCancel";
+            this.btnCancel.Size = new System.Drawing.Size(75, 23);
+            this.btnCancel.TabIndex = 5;
             this.btnCancel.Text = "Cancel";
-            this.btnCancel.Location = new System.Drawing.Point(260, 190);
             this.btnCancel.Click += new System.EventHandler(this.btnCancel_Click);
             // 
             // FormWorkflowDetails
@@ -72,9 +89,11 @@
             this.Controls.Add(this.txtAssignedTo);
             this.Controls.Add(this.btnOk);
             this.Controls.Add(this.btnCancel);
+            this.Name = "FormWorkflowDetails";
             this.Text = "Workflow Details";
             this.ResumeLayout(false);
             this.PerformLayout();
+
         }
     }
 }
