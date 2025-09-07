@@ -1,17 +1,23 @@
 ﻿using System;
 using System.Windows.Forms;
 
-
 namespace FlowForge
 {
-    internal static class Program
+    static class Program
     {
         [STAThread]
-        private static void Main()
+        static void Main()
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+
+            using (var login = new LoginForm())
+            {
+                if (login.ShowDialog() == DialogResult.OK)
+                {
+                    Application.Run(new MainForm(login.LoggedInUser));
+                }
+            }
         }
     }
 }
