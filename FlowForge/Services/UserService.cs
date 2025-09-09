@@ -9,7 +9,6 @@ namespace FlowForge.Services
 {
     public static class UserService
     {
-        // 🔒 Keep FilePath private so no ambiguity happens
         private static readonly string _filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "users.json");
 
         public static List<UserRecord> LoadUsers()
@@ -73,17 +72,8 @@ namespace FlowForge.Services
         public static void RestoreDefaultAdmin()
         {
             var users = LoadUsers();
-
-            // Remove any existing admin account first
             users.RemoveAll(u => u.Username.Equals("admin", StringComparison.OrdinalIgnoreCase));
-
-            // Add default admin/admin
-            users.Add(new UserRecord
-            {
-                Username = "admin",
-                PasswordHash = HashPassword("admin")
-            });
-
+            users.Add(new UserRecord { Username = "admin", PasswordHash = HashPassword("admin") });
             SaveUsers(users);
         }
 
@@ -92,7 +82,7 @@ namespace FlowForge.Services
             using (var sha256 = SHA256.Create())
             {
                 byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                return Convert.ToBase64String(bytes); // ✅ consistent Base64
+                return Convert.ToBase64String(bytes);
             }
         }
     }
