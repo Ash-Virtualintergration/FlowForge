@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 namespace FlowForge
 {
-    static class Program
+    internal static class Program
     {
         [STAThread]
         static void Main()

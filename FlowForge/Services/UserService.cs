@@ -1,55 +1,56 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Newtonsoft.Json;
-using FlowForge.Models;
 
 namespace FlowForge.Services
 {
     public static class UserService
     {
-        private static readonly string FilePath = "users.json";
+        // 🔒 Keep FilePath private so no ambiguity happens
+        private static readonly string _filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "users.json");
 
-        public static List<User> LoadUsers()
+        public static List<UserRecord> LoadUsers()
         {
-            if (!File.Exists(FilePath)) return new List<User>();
-            var json = File.ReadAllText(FilePath);
-            return JsonConvert.DeserializeObject<List<User>>(json) ?? new List<User>();
-        }
-
-        public static void SaveUsers(List<User> users)
-        {
-            var json = JsonConvert.SerializeObject(users, Formatting.Indented);
-            File.WriteAllText(FilePath, json);
-        }
-
-        public static string HashPassword(string password)
-        {
-            using (var sha256 = SHA256.Create())
+            if (!File.Exists(_filePath))
             {
-                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                return Convert.ToBase64String(bytes);
+                var defaultUsers = new List<UserRecord>
+                {
+                    new UserRecord { Username = "admin", PasswordHash = HashPassword("admin") }
+                };
+                SaveUsers(defaultUsers);
+                return defaultUsers;
             }
+
+            string json = File.ReadAllText(_filePath);
+            return JsonConvert.DeserializeObject<List<UserRecord>>(json) ?? new List<UserRecord>();
         }
 
-        public static bool ValidateUser(string username, string password)
+        public static void SaveUsers(List<UserRecord> users)
         {
-            var users = LoadUsers();
-            var user = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
-            if (user == null) return false;
-            return user.PasswordHash == HashPassword(password);
+            string json = JsonConvert.SerializeObject(users, Formatting.Indented);
+            File.WriteAllText(_filePath, json);
         }
 
         public static void AddUser(string username, string password)
         {
             var users = LoadUsers();
-            if (users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
+            if (users.Exists(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
                 throw new Exception("User already exists.");
 
-            users.Add(new User { Username = username, PasswordHash = HashPassword(password) });
+            users.Add(new UserRecord { Username = username, PasswordHash = HashPassword(password) });
+            SaveUsers(users);
+        }
+
+        public static void ResetPassword(string username, string newPassword)
+        {
+            var users = LoadUsers();
+            var user = users.Find(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+            if (user == null) throw new Exception("User not found.");
+
+            user.PasswordHash = HashPassword(newPassword);
             SaveUsers(users);
         }
 
@@ -60,27 +61,45 @@ namespace FlowForge.Services
             SaveUsers(users);
         }
 
-        public static void ResetPassword(string username, string newPassword)
+        public static bool ValidateUser(string username, string password)
         {
             var users = LoadUsers();
-            var user = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
-            if (user == null) throw new Exception("User not found.");
-            user.PasswordHash = HashPassword(newPassword);
-            SaveUsers(users);
+            var user = users.Find(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+            if (user == null) return false;
+
+            return user.PasswordHash == HashPassword(password);
         }
 
         public static void RestoreDefaultAdmin()
         {
             var users = LoadUsers();
+
+            // Remove any existing admin account first
             users.RemoveAll(u => u.Username.Equals("admin", StringComparison.OrdinalIgnoreCase));
 
-            users.Add(new User
+            // Add default admin/admin
+            users.Add(new UserRecord
             {
-                Username = "Admin",
-                PasswordHash = HashPassword("Admin")
+                Username = "admin",
+                PasswordHash = HashPassword("admin")
             });
 
             SaveUsers(users);
         }
+
+        private static string HashPassword(string password)
+        {
+            using (var sha256 = SHA256.Create())
+            {
+                byte[] bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+                return Convert.ToBase64String(bytes); // ✅ consistent Base64
+            }
+        }
+    }
+
+    public class UserRecord
+    {
+        public string Username { get; set; }
+        public string PasswordHash { get; set; }
     }
 }

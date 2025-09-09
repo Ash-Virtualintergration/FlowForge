@@ -1,116 +1,80 @@
 ﻿using FlowForge.Services;
-using MaterialSkin;
-using MaterialSkin.Controls;
 using System;
 using System.Drawing;
 using System.Windows.Forms;
 
 namespace FlowForge
 {
-    public partial class LoginForm : MaterialForm
+    public partial class LoginForm : Form
     {
         public string LoggedInUser { get; private set; }
 
-        private readonly MaterialTextBox _txtUsername = new MaterialTextBox();
-        private readonly MaterialTextBox _txtPassword = new MaterialTextBox();
-        private readonly MaterialButton _btnLogin = new MaterialButton();
-        private readonly MaterialButton _btnExit = new MaterialButton();
+        private TextBox txtUsername;
+        private TextBox txtPassword;
+        private Button btnLogin;
+        private Label lblMessage;
 
         public LoginForm()
         {
-            Text = "FlowForge - Login";
-            Size = new Size(400, 250);
-            StartPosition = FormStartPosition.CenterScreen;
-            MaximizeBox = false;
-            MinimizeBox = false;
-            FormBorderStyle = FormBorderStyle.FixedDialog;
-
-            InitializeMaterialSkin();
+            InitializeComponent();
             BuildLayout();
-        }
-
-        private void InitializeMaterialSkin()
-        {
-            var manager = MaterialSkinManager.Instance;
-            manager.AddFormToManage(this);
-            manager.Theme = MaterialSkinManager.Themes.LIGHT;
-            manager.ColorScheme = new ColorScheme(
-                Primary.Blue600,
-                Primary.Blue700,
-                Primary.Blue200,
-                Accent.Pink200,
-                TextShade.WHITE
-            );
         }
 
         private void BuildLayout()
         {
-            var panel = new TableLayoutPanel
+            this.Text = "Login - FlowForge";
+            this.Size = new Size(400, 250);
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+
+            Label lblUser = new Label { Text = "Username:", Location = new Point(50, 40), AutoSize = true };
+            txtUsername = new TextBox { Location = new Point(150, 40), Width = 180 };
+
+            Label lblPass = new Label { Text = "Password:", Location = new Point(50, 80), AutoSize = true };
+            txtPassword = new TextBox { Location = new Point(150, 80), Width = 180, UseSystemPasswordChar = true };
+
+            btnLogin = new Button
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(20),
-                ColumnCount = 2,
-                RowCount = 3
+                Text = "Login",
+                Location = new Point(150, 130),
+                Width = 100,
+                Height = 30
+            };
+            btnLogin.Click += BtnLogin_Click;
+
+            lblMessage = new Label
+            {
+                ForeColor = Color.Red,
+                Location = new Point(50, 170),
+                Width = 280,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter
             };
 
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));
-
-            // Username
-            panel.Controls.Add(new Label { Text = "Username:", Anchor = AnchorStyles.Left, AutoSize = true }, 0, 0);
-            _txtUsername.Hint = "Enter username";
-            _txtUsername.Dock = DockStyle.Fill;
-            panel.Controls.Add(_txtUsername, 1, 0);
-
-            // Password
-            panel.Controls.Add(new Label { Text = "Password:", Anchor = AnchorStyles.Left, AutoSize = true }, 0, 1);
-            _txtPassword.Hint = "Enter password";
-            _txtPassword.Password = true;
-            _txtPassword.Dock = DockStyle.Fill;
-            panel.Controls.Add(_txtPassword, 1, 1);
-
-            // Buttons
-            var buttonPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.RightToLeft };
-
-            _btnLogin.Text = "Login";
-            _btnLogin.Click += BtnLogin_Click;
-
-            _btnExit.Text = "Exit";
-            _btnExit.Click += (s, e) => Application.Exit();
-
-            buttonPanel.Controls.Add(_btnLogin);
-            buttonPanel.Controls.Add(_btnExit);
-
-            panel.Controls.Add(buttonPanel, 1, 2);
-
-            Controls.Add(panel);
+            this.Controls.Add(lblUser);
+            this.Controls.Add(txtUsername);
+            this.Controls.Add(lblPass);
+            this.Controls.Add(txtPassword);
+            this.Controls.Add(btnLogin);
+            this.Controls.Add(lblMessage);
         }
 
         private void BtnLogin_Click(object sender, EventArgs e)
         {
-            var username = _txtUsername.Text.Trim();
-            var password = _txtPassword.Text.Trim();
-
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
-            {
-                MessageBox.Show("Please enter both username and password.", "Login Failed",
-                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
+            string username = txtUsername.Text.Trim();
+            string password = txtPassword.Text;
 
             if (UserService.ValidateUser(username, password))
             {
                 LoggedInUser = username;
-                DialogResult = DialogResult.OK;
-                Close();
+                this.DialogResult = DialogResult.OK;
+                this.Close();
             }
             else
             {
-                MessageBox.Show("Invalid username or password.", "Login Failed",
-                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                lblMessage.Text = "Invalid username or password!";
             }
         }
     }
