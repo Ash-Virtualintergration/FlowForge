@@ -1,22 +1,32 @@
 ﻿using System;
 using System.Windows.Forms;
+using FlowForge.Services;
 
 namespace FlowForge
 {
-    static class Program
+    internal static class Program
     {
         [STAThread]
         static void Main()
         {
+            // Ensure default admin user exists
+            EnsureDefaultAdmin();
+
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            using (var login = new LoginForm())
+            // Show the login form first
+            Application.Run(new LoginForm());
+        }
+
+        private static void EnsureDefaultAdmin()
+        {
+            var users = UserService.LoadUsers();
+
+            if (!users.Exists(u => u.Username.Equals("admin", StringComparison.OrdinalIgnoreCase)))
             {
-                if (login.ShowDialog() == DialogResult.OK)
-                {
-                    Application.Run(new MainForm(login.LoggedInUser));
-                }
+                UserService.AddUser("admin", "admin");
+                Console.WriteLine("Default admin user created: admin/admin");
             }
         }
     }

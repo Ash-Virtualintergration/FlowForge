@@ -28,11 +28,9 @@ namespace FlowForge.Services
 
         public static string HashPassword(string password)
         {
-            using (var sha256 = SHA256.Create())
-            {
-                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                return Convert.ToBase64String(bytes);
-            }
+            using var sha256 = SHA256.Create();
+            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            return Convert.ToBase64String(bytes);
         }
 
         public static bool ValidateUser(string username, string password)
@@ -66,20 +64,6 @@ namespace FlowForge.Services
             var user = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
             if (user == null) throw new Exception("User not found.");
             user.PasswordHash = HashPassword(newPassword);
-            SaveUsers(users);
-        }
-
-        public static void RestoreDefaultAdmin()
-        {
-            var users = LoadUsers();
-            users.RemoveAll(u => u.Username.Equals("admin", StringComparison.OrdinalIgnoreCase));
-
-            users.Add(new User
-            {
-                Username = "Admin",
-                PasswordHash = HashPassword("Admin")
-            });
-
             SaveUsers(users);
         }
     }
