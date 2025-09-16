@@ -1,6 +1,7 @@
-﻿using System;
+﻿using FlowForge.Models;
+using System;
+using System.Drawing;
 using System.Windows.Forms;
-using FlowForge.Models;
 
 namespace FlowForge
 {
@@ -12,34 +13,59 @@ namespace FlowForge
         {
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
-            Width = 300,
-            Height = 100
+            Width = 350,
+            Height = 120,
+            Font = new Font("Segoe UI", 10),
+            BackColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
         };
 
         private readonly Label _lblNotes = new Label
         {
             Text = "Notes:",
-            AutoSize = true
+            AutoSize = true,
+            Font = new Font("Segoe UI", 10, FontStyle.Bold)
         };
 
         public FormWorkflowDetails()
         {
             InitializeComponent();
 
-            // ✅ Add Notes label + box to form dynamically
-            _lblNotes.Location = new System.Drawing.Point(30, 110);
-            _txtNotes.Location = new System.Drawing.Point(30, 130);
+            this.BackColor = Color.FromArgb(245, 245, 245);
+            this.Text = "Workflow Details";
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.Size = new Size(450, 450);
+
+            // --- Dynamically position Notes below txtAssignedTo ---
+            int notesTop = txtAssignedTo.Bottom + 20; // 20 px spacing below AssignedTo
+            _lblNotes.Location = new Point(30, notesTop);
+            _txtNotes.Location = new Point(30, _lblNotes.Bottom + 5);
 
             Controls.Add(_lblNotes);
             Controls.Add(_txtNotes);
+
+            // --- Move OK / Cancel buttons below Notes ---
+            int buttonsTop = _txtNotes.Bottom + 20;
+            if (btnOk != null)
+            {
+                btnOk.Location = new Point(30, buttonsTop);
+                StyleButton(btnOk, Color.FromArgb(0, 120, 215));
+            }
+
+            if (btnCancel != null)
+            {
+                btnCancel.Location = new Point(150, buttonsTop);
+                StyleButton(btnCancel, Color.Gray);
+            }
         }
 
         public FormWorkflowDetails(Workflow wf) : this()
         {
             txtName.Text = wf.Name;
             cmbStatus.SelectedItem = wf.Status;
-            txtAssignedTo.Text = wf.AssignedTo;   // ✅ load assigned user
-            _txtNotes.Text = wf.Notes;            // ✅ load notes
+            txtAssignedTo.Text = wf.AssignedTo;
+            _txtNotes.Text = wf.Notes;
         }
 
         private void btnOk_Click(object sender, EventArgs e)
@@ -48,8 +74,8 @@ namespace FlowForge
             {
                 Name = txtName.Text,
                 Status = cmbStatus.SelectedItem?.ToString() ?? "Not Started",
-                AssignedTo = txtAssignedTo.Text,  // ✅ save assigned user
-                Notes = _txtNotes.Text            // ✅ save notes
+                AssignedTo = txtAssignedTo.Text,
+                Notes = _txtNotes.Text
             };
 
             DialogResult = DialogResult.OK;
@@ -60,6 +86,18 @@ namespace FlowForge
         {
             DialogResult = DialogResult.Cancel;
             Close();
+        }
+
+        private void StyleButton(Button btn, Color color)
+        {
+            btn.BackColor = color;
+            btn.ForeColor = Color.White;
+            btn.FlatStyle = FlatStyle.Flat;
+            btn.FlatAppearance.BorderSize = 0;
+            btn.Font = new Font("Segoe UI", 10, FontStyle.Bold);
+
+            btn.MouseEnter += (s, e) => btn.BackColor = ControlPaint.Light(color);
+            btn.MouseLeave += (s, e) => btn.BackColor = color;
         }
     }
 }

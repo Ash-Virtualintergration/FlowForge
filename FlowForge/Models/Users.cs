@@ -3,6 +3,7 @@
     public class User
     {
         public string Username { get; set; }
-        public string PasswordHash { get; set; } // Store hash instead of plain text
+        public string Password { get; set; }   // plain text for now (you asked to remove hashing)
+        public bool IsAdmin { get; set; }
     }
 }

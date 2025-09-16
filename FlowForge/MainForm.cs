@@ -5,49 +5,34 @@ using MaterialSkin.Controls;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
 using System.Windows.Forms;
-using System.Windows.Forms.DataVisualization.Charting;
 
 namespace FlowForge
 {
     public partial class MainForm : MaterialForm
     {
         private readonly string _currentUser;
-        private readonly List<Workflow> _workflows = new List<Workflow>();
-        private AppSettings _settings = new AppSettings();
+        private MaterialTabControl tabControl;
+        private DataGridView dgvWorkflows;
+        private DataGridView dgvUsers;
+        private TextBox txtWorkflowSearch;
+        private List<Workflow> workflows = new List<Workflow>();
+        private List<User> users = new List<User>();
+        private readonly string workflowFile = "workflows.json";
 
-        private readonly TabControl _tabs = new TabControl();
-        private readonly TabPage _tabDashboard = new TabPage("Dashboard");
-        private readonly TabPage _tabWorkflows = new TabPage("Workflows");
-        private readonly TabPage _tabSettings = new TabPage("Settings");
-
-        private readonly StatusStrip _statusStrip = new StatusStrip();
-        private readonly ToolStripStatusLabel _statusLabel = new ToolStripStatusLabel("Ready");
-        private readonly Timer _statusResetTimer = new Timer();
-
-        private readonly ListView _lvWorkflows = new ListView();
-        private readonly Button _btnAdd = new Button();
-        private readonly Button _btnDelete = new Button();
-
-        private readonly Button _btnLogout = new Button();
-
-        private readonly CheckBox _switchDark = new CheckBox { Text = "Use Dark Theme", AutoSize = true };
-        private readonly ListView _lvUsers = new ListView();
-        private readonly Button _btnAddUser = new Button();
-        private readonly Button _btnResetPassword = new Button();
-        private readonly Button _btnDeleteUser = new Button();
-        private readonly Button _btnRestoreAdmin = new Button();
-
-        public MainForm(string currentUser)
+        public MainForm(string loggedInUser)
         {
-            _currentUser = currentUser;
-            Text = "FlowForge";
-            Size = new Size(1280, 720);
-            StartPosition = FormStartPosition.CenterScreen;
-
+            _currentUser = loggedInUser;
+            InitializeComponent();
             InitializeMaterialSkin();
             BuildLayout();
-            Load += MainForm_Load;
+            LoadWorkflowsFromFile();
+            LoadUsers();
+            RefreshWorkflowGrid();
+            RefreshUserGrid();
         }
 
         private void InitializeMaterialSkin()
@@ -56,209 +41,324 @@ namespace FlowForge
             manager.AddFormToManage(this);
             manager.Theme = MaterialSkinManager.Themes.LIGHT;
             manager.ColorScheme = new ColorScheme(
-                Primary.Blue600, Primary.Blue700, Primary.Blue200, Accent.Pink200, TextShade.WHITE);
-        }
-
-        private void ApplyTheme()
-        {
-            var manager = MaterialSkinManager.Instance;
-            manager.Theme = _settings.UseDarkTheme ? MaterialSkinManager.Themes.DARK : MaterialSkinManager.Themes.LIGHT;
-            Invalidate();
-            Update();
+                Primary.Blue600,
+                Primary.Blue700,
+                Primary.Blue200,
+                Accent.Pink200,
+                TextShade.WHITE
+            );
         }
 
         private void BuildLayout()
         {
-            _tabs.Dock = DockStyle.Fill;
-            _tabs.TabPages.Add(_tabDashboard);
-            _tabs.TabPages.Add(_tabWorkflows);
+            this.Text = $"FlowForge Dashboard - {_currentUser}";
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.WindowState = FormWindowState.Maximized;
 
-            if (_currentUser.Equals("admin", StringComparison.OrdinalIgnoreCase))
-                _tabs.TabPages.Add(_tabSettings);
+            tabControl = new MaterialTabControl { Dock = DockStyle.Fill };
 
-            _btnLogout.Text = "Log Out";
-            _btnLogout.Size = new Size(100, 32);
-            _btnLogout.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            _btnLogout.Location = new Point(ClientSize.Width - 120, 10);
-            _btnLogout.Click += BtnLogout_Click;
-            Controls.Add(_btnLogout);
+            var tabWorkflows = new TabPage("Workflows");
+            var tabSettings = new TabPage("Settings");
 
-            Controls.Add(_tabs);
-            _statusStrip.Items.Add(_statusLabel);
-            _statusStrip.Dock = DockStyle.Bottom;
-            Controls.Add(_statusStrip);
+            tabControl.TabPages.Add(tabWorkflows);
 
-            _statusResetTimer.Interval = 2000;
-            _statusResetTimer.Tick += (s, e) => { _statusLabel.Text = "Ready"; _statusResetTimer.Stop(); };
+            // Only admins get settings tab
+            var currentUserObj = UserService.LoadUsers()
+                .FirstOrDefault(u => string.Equals(u.Username, _currentUser, StringComparison.OrdinalIgnoreCase));
+            if (currentUserObj != null && currentUserObj.IsAdmin)
+                tabControl.TabPages.Add(tabSettings);
 
-            BuildDashboardTab();
-            BuildWorkflowsTab();
-            if (_currentUser.Equals("admin", StringComparison.OrdinalIgnoreCase)) BuildSettingsTab();
+            this.Controls.Add(tabControl);
+
+            BuildWorkflowTab(tabWorkflows);
+            BuildSettingsTab(tabSettings);
         }
 
-        private void BuildDashboardTab()
+        #region Workflow Tab
+        private void BuildWorkflowTab(TabPage tab)
         {
-            _tabDashboard.Controls.Add(new Label
+            var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+
+            var btnNewWorkflow = new MaterialButton
             {
-                Text = "Dashboard coming soon...",
+                Text = "Create New Workflow",
+                Dock = DockStyle.Top,
+                Height = 40
+            };
+            btnNewWorkflow.Click += BtnNewWorkflow_Click;
+            panel.Controls.Add(btnNewWorkflow);
+
+            txtWorkflowSearch = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Font = new Font("Segoe UI", 10),
+                ForeColor = Color.Gray,
+                Text = "Search workflow..."
+            };
+            txtWorkflowSearch.GotFocus += (s, e) =>
+            {
+                if (txtWorkflowSearch.Text == "Search workflow...")
+                {
+                    txtWorkflowSearch.Text = "";
+                    txtWorkflowSearch.ForeColor = Color.Black;
+                }
+            };
+            txtWorkflowSearch.LostFocus += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtWorkflowSearch.Text))
+                {
+                    txtWorkflowSearch.Text = "Search workflow...";
+                    txtWorkflowSearch.ForeColor = Color.Gray;
+                }
+            };
+            txtWorkflowSearch.TextChanged += (s, e) => RefreshWorkflowGrid();
+            panel.Controls.Add(txtWorkflowSearch);
+
+            dgvWorkflows = new DataGridView
+            {
                 Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleCenter
-            });
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect
+            };
+            dgvWorkflows.CellContentClick += DgvWorkflows_CellContentClick;
+            panel.Controls.Add(dgvWorkflows);
+
+            panel.Controls.SetChildIndex(txtWorkflowSearch, 0);
+            panel.Controls.SetChildIndex(btnNewWorkflow, 0);
+
+            tab.Controls.Add(panel);
         }
 
-        private void BuildWorkflowsTab()
+        private void LoadWorkflowsFromFile()
         {
-            _lvWorkflows.Dock = DockStyle.Fill;
-            _lvWorkflows.View = View.Details;
-            _lvWorkflows.Columns.Add("Name", 200);
-            _lvWorkflows.Columns.Add("Status", 100);
-            _lvWorkflows.Columns.Add("Assigned To", 150);
-            _lvWorkflows.Columns.Add("Notes", 300);
-            _tabWorkflows.Controls.Add(_lvWorkflows);
+            if (File.Exists(workflowFile))
+            {
+                string json = File.ReadAllText(workflowFile);
+                workflows = JsonSerializer.Deserialize<List<Workflow>>(json) ?? new List<Workflow>();
+            }
         }
 
-        private void BuildSettingsTab()
+        private void SaveWorkflowsToFile()
         {
-            _tabSettings.Padding = new Padding(24);
-            _switchDark.Location = new Point(24, 24);
-            _switchDark.CheckedChanged += (s, e) =>
-            {
-                _settings.UseDarkTheme = _switchDark.Checked;
-                SettingsService.SaveSettings(_settings);
-                ApplyTheme();
-                ShowStatus("Theme updated");
-            };
-            _tabSettings.Controls.Add(_switchDark);
+            string json = JsonSerializer.Serialize(workflows, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(workflowFile, json);
+        }
 
-            _lvUsers.Dock = DockStyle.Bottom;
-            _lvUsers.Height = 300;
-            _lvUsers.View = View.Details;
-            _lvUsers.Columns.Add("Username", 300);
-            _tabSettings.Controls.Add(_lvUsers);
+        private void RefreshWorkflowGrid()
+        {
+            if (dgvWorkflows == null) return;
 
-            var panelButtons = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Bottom,
-                Height = 40,
-                FlowDirection = FlowDirection.LeftToRight
-            };
+            dgvWorkflows.Columns.Clear();
+            dgvWorkflows.DataSource = null;
 
-            _btnAddUser.Text = "Add User";
-            _btnAddUser.Click += (s, e) =>
+            var filtered = workflows
+                .Where(w => string.IsNullOrWhiteSpace(txtWorkflowSearch.Text) || txtWorkflowSearch.ForeColor == Color.Gray ||
+                            w.Name.IndexOf(txtWorkflowSearch.Text, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            w.Status.IndexOf(txtWorkflowSearch.Text, StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
+
+            dgvWorkflows.DataSource = filtered.Select(w => new
             {
-                string username = ShowInputDialog("Enter new username:", "Add User");
-                string password = ShowInputDialog("Enter password:", "Add User");
-                if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
+                w.Name,
+                w.Status,
+                w.AssignedTo,
+                w.Notes
+            }).ToList();
+
+            if (!dgvWorkflows.Columns.Contains("Edit"))
+            {
+                var editBtn = new DataGridViewButtonColumn
                 {
-                    try
+                    Name = "Edit",
+                    Text = "Edit",
+                    UseColumnTextForButtonValue = true
+                };
+                dgvWorkflows.Columns.Add(editBtn);
+            }
+
+            if (!dgvWorkflows.Columns.Contains("Delete"))
+            {
+                var delBtn = new DataGridViewButtonColumn
+                {
+                    Name = "Delete",
+                    Text = "Delete",
+                    UseColumnTextForButtonValue = true
+                };
+                dgvWorkflows.Columns.Add(delBtn);
+            }
+
+            foreach (DataGridViewRow row in dgvWorkflows.Rows)
+            {
+                if (row.Cells["Status"].Value != null)
+                {
+                    string status = row.Cells["Status"].Value.ToString();
+                    if (status == "Completed")
+                        row.Cells["Status"].Style.BackColor = Color.LightGreen;
+                    else if (status == "In Progress")
+                        row.Cells["Status"].Style.BackColor = Color.Orange;
+                    else
+                        row.Cells["Status"].Style.BackColor = Color.IndianRed;
+                }
+            }
+        }
+
+        private void BtnNewWorkflow_Click(object sender, EventArgs e)
+        {
+            using (var wfForm = new FormWorkflowDetails())
+            {
+                if (wfForm.ShowDialog() == DialogResult.OK)
+                {
+                    workflows.Add(wfForm.ResultWorkflow);
+                    SaveWorkflowsToFile();
+                    RefreshWorkflowGrid();
+                }
+            }
+        }
+
+        private void DgvWorkflows_CellContentClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            var selectedWorkflow = workflows[e.RowIndex];
+
+            if (dgvWorkflows.Columns[e.ColumnIndex].Name == "Edit")
+            {
+                using (var wfForm = new FormWorkflowDetails(selectedWorkflow))
+                {
+                    if (wfForm.ShowDialog() == DialogResult.OK)
                     {
-                        UserService.AddUser(username, password);
-                        LoadUsers();
-                        ShowStatus("User added");
+                        workflows[e.RowIndex] = wfForm.ResultWorkflow;
+                        SaveWorkflowsToFile();
+                        RefreshWorkflowGrid();
                     }
-                    catch (Exception ex) { MessageBox.Show(ex.Message); }
                 }
-            };
-
-            _btnResetPassword.Text = "Reset Password";
-            _btnResetPassword.Click += (s, e) =>
+            }
+            else if (dgvWorkflows.Columns[e.ColumnIndex].Name == "Delete")
             {
-                if (_lvUsers.SelectedItems.Count == 0) return;
-                string username = _lvUsers.SelectedItems[0].Text;
-                string newPass = ShowInputDialog("Enter new password:", "Reset Password");
-                if (!string.IsNullOrEmpty(newPass))
+                var confirm = MessageBox.Show($"Delete workflow '{selectedWorkflow.Name}'?", "Confirm Delete",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (confirm == DialogResult.Yes)
                 {
-                    UserService.ResetPassword(username, newPass);
-                    ShowStatus("Password reset");
+                    workflows.RemoveAt(e.RowIndex);
+                    SaveWorkflowsToFile();
+                    RefreshWorkflowGrid();
                 }
-            };
+            }
+        }
+        #endregion
 
-            _btnDeleteUser.Text = "Delete User";
-            _btnDeleteUser.Click += (s, e) =>
+        #region Settings Tab
+        private void BuildSettingsTab(TabPage tab)
+        {
+            if (tab == null) return;
+
+            var panel = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+
+            dgvUsers = new DataGridView
             {
-                if (_lvUsers.SelectedItems.Count == 0) return;
-                string username = _lvUsers.SelectedItems[0].Text;
-                UserService.DeleteUser(username);
-                LoadUsers();
-                ShowStatus("User deleted");
+                Dock = DockStyle.Fill,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                ReadOnly = true,
+                AllowUserToAddRows = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect
             };
+            panel.Controls.Add(dgvUsers);
 
-            _btnRestoreAdmin.Text = "Restore Default Admin";
-            _btnRestoreAdmin.Click += (s, e) =>
-            {
-                UserService.RestoreDefaultAdmin();
-                LoadUsers();
-                ShowStatus("Default admin restored");
-            };
+            var btnAddUser = new MaterialButton { Text = "Add User", Dock = DockStyle.Top, Height = 35 };
+            btnAddUser.Click += BtnAddUser_Click;
 
-            panelButtons.Controls.Add(_btnAddUser);
-            panelButtons.Controls.Add(_btnResetPassword);
-            panelButtons.Controls.Add(_btnDeleteUser);
-            panelButtons.Controls.Add(_btnRestoreAdmin);
+            var btnDeleteUser = new MaterialButton { Text = "Delete User", Dock = DockStyle.Top, Height = 35 };
+            btnDeleteUser.Click += BtnDeleteUser_Click;
 
-            _tabSettings.Controls.Add(panelButtons);
-            LoadUsers();
+            var btnPromoteUser = new MaterialButton { Text = "Promote to Admin", Dock = DockStyle.Top, Height = 35 };
+            btnPromoteUser.Click += BtnPromoteUser_Click;
+
+            panel.Controls.Add(btnPromoteUser);
+            panel.Controls.Add(btnDeleteUser);
+            panel.Controls.Add(btnAddUser);
+
+            panel.Controls.SetChildIndex(btnAddUser, 0);
+            panel.Controls.SetChildIndex(btnDeleteUser, 1);
+            panel.Controls.SetChildIndex(btnPromoteUser, 2);
+
+            tab.Controls.Add(panel);
         }
 
         private void LoadUsers()
         {
-            _lvUsers.Items.Clear();
-            foreach (var user in UserService.LoadUsers())
-                _lvUsers.Items.Add(new ListViewItem(user.Username));
+            users = UserService.LoadUsers();
         }
 
-        private void ShowStatus(string message)
+        private void RefreshUserGrid()
         {
-            _statusLabel.Text = message;
-            _statusResetTimer.Start();
+            if (dgvUsers == null) return;
+
+            dgvUsers.Columns.Clear();
+            dgvUsers.DataSource = null;
+
+            dgvUsers.DataSource = users.Select(u => new { u.Username, u.IsAdmin }).ToList();
         }
 
-        private void MainForm_Load(object sender, EventArgs e)
+        private void BtnAddUser_Click(object sender, EventArgs e)
         {
-            ShowStatus($"Welcome, {_currentUser}");
-        }
+            string username = Microsoft.VisualBasic.Interaction.InputBox("Enter username:", "Add User", "");
+            string password = Microsoft.VisualBasic.Interaction.InputBox("Enter password:", "Add User", "");
 
-        private void BtnLogout_Click(object sender, EventArgs e)
-        {
-            this.Hide();
-            using (var login = new LoginForm())
+            if (!string.IsNullOrWhiteSpace(username) && !string.IsNullOrWhiteSpace(password))
             {
-                if (login.ShowDialog() == DialogResult.OK)
+                bool added = UserService.AddUser(username, password, false); // isAdmin = false by default
+                if (added)
                 {
-                    var main = new MainForm(login.LoggedInUser);
-                    main.ShowDialog();
+                    LoadUsers();
+                    RefreshUserGrid();
+                    MessageBox.Show($"User '{username}' added.");
+                }
+                else
+                {
+                    MessageBox.Show($"User '{username}' already exists.");
                 }
             }
-            this.Close();
         }
 
-        // -------------------------
-        // Custom input dialog method
-        // -------------------------
-        private string ShowInputDialog(string text, string caption)
+        private void BtnDeleteUser_Click(object sender, EventArgs e)
         {
-            using (Form inputForm = new Form())
+            if (dgvUsers.SelectedRows.Count == 0) return;
+
+            string username = dgvUsers.SelectedRows[0].Cells["Username"].Value.ToString();
+            var confirm = MessageBox.Show($"Delete user '{username}'?", "Confirm Delete", MessageBoxButtons.YesNo);
+            if (confirm == DialogResult.Yes)
             {
-                inputForm.Width = 400;
-                inputForm.Height = 150;
-                inputForm.Text = caption;
-                inputForm.StartPosition = FormStartPosition.CenterParent;
+                if (UserService.RemoveUser(username)) // use RemoveUser instead of DeleteUser
+                {
+                    LoadUsers();
+                    RefreshUserGrid();
+                }
+                else
+                {
+                    MessageBox.Show("Cannot delete user.");
+                }
 
-                Label lbl = new Label() { Left = 10, Top = 10, Text = text, Width = 360 };
-                TextBox txt = new TextBox() { Left = 10, Top = 40, Width = 360 };
-                Button ok = new Button() { Text = "OK", Left = 220, Width = 75, Top = 70, DialogResult = DialogResult.OK };
-                Button cancel = new Button() { Text = "Cancel", Left = 300, Width = 75, Top = 70, DialogResult = DialogResult.Cancel };
-
-                inputForm.Controls.Add(lbl);
-                inputForm.Controls.Add(txt);
-                inputForm.Controls.Add(ok);
-                inputForm.Controls.Add(cancel);
-
-                inputForm.AcceptButton = ok;
-                inputForm.CancelButton = cancel;
-
-                return inputForm.ShowDialog() == DialogResult.OK ? txt.Text : "";
             }
         }
+
+        private void BtnPromoteUser_Click(object sender, EventArgs e)
+        {
+            if (dgvUsers.SelectedRows.Count == 0) return;
+
+            string username = dgvUsers.SelectedRows[0].Cells["Username"].Value.ToString();
+            try
+            {
+                UserService.PromoteUser(username);
+                LoadUsers();
+                RefreshUserGrid();
+                MessageBox.Show($"{username} promoted to admin!");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
+        }
+        #endregion
     }
 }

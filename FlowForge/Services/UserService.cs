@@ -1,11 +1,11 @@
-﻿using System;
+﻿using FlowForge.Models;
+using Newtonsoft.Json; // Make sure to install Newtonsoft.Json via NuGet
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using Newtonsoft.Json;
-using FlowForge.Models;
 
 namespace FlowForge.Services
 {
@@ -15,9 +15,36 @@ namespace FlowForge.Services
 
         public static List<User> LoadUsers()
         {
-            if (!File.Exists(FilePath)) return new List<User>();
+            if (!File.Exists(FilePath))
+            {
+                // Create default admin if file doesn't exist
+                var defaultAdmin = new User
+                {
+                    Username = "admin",
+                    Password = HashPassword("admin"),
+                    IsAdmin = true
+                };
+                var users = new List<User> { defaultAdmin };
+                SaveUsers(users);
+                return users;
+            }
+
             var json = File.ReadAllText(FilePath);
-            return JsonConvert.DeserializeObject<List<User>>(json) ?? new List<User>();
+            var usersList = JsonConvert.DeserializeObject<List<User>>(json) ?? new List<User>();
+
+            // Ensure all passwords are hashed (for legacy users with plain-text passwords)
+            bool updated = false;
+            foreach (var user in usersList)
+            {
+                if (!IsHashed(user.Password))
+                {
+                    user.Password = HashPassword(user.Password);
+                    updated = true;
+                }
+            }
+            if (updated) SaveUsers(usersList);
+
+            return usersList;
         }
 
         public static void SaveUsers(List<User> users)
@@ -26,45 +53,70 @@ namespace FlowForge.Services
             File.WriteAllText(FilePath, json);
         }
 
-        public static string HashPassword(string password)
+        public static bool Register(string username, string password)
         {
-            using var sha256 = SHA256.Create();
-            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(bytes);
+            return AddUser(username, password, false);
         }
 
-        public static bool ValidateUser(string username, string password)
+        public static bool AddUser(string username, string password, bool isAdmin)
         {
             var users = LoadUsers();
-            var user = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+            if (users.Any(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase)))
+                return false;
+
+            users.Add(new User
+            {
+                Username = username,
+                Password = HashPassword(password),
+                IsAdmin = isAdmin
+            });
+            SaveUsers(users);
+            return true;
+        }
+
+        public static User Validate(string username, string password)
+        {
+            var hashedPassword = HashPassword(password);
+            var users = LoadUsers();
+            return users.FirstOrDefault(u =>
+                string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase) &&
+                u.Password == hashedPassword);
+        }
+
+        public static bool PromoteUser(string username)
+        {
+            var users = LoadUsers();
+            var user = users.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
             if (user == null) return false;
-            return user.PasswordHash == HashPassword(password);
+
+            user.IsAdmin = true;
+            SaveUsers(users);
+            return true;
         }
 
-        public static void AddUser(string username, string password)
+        public static bool IsUserAdmin(string username)
         {
             var users = LoadUsers();
-            if (users.Any(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase)))
-                throw new Exception("User already exists.");
-
-            users.Add(new User { Username = username, PasswordHash = HashPassword(password) });
-            SaveUsers(users);
+            var user = users.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
+            return user != null && user.IsAdmin;
         }
 
-        public static void DeleteUser(string username)
+        private static string HashPassword(string password)
         {
-            var users = LoadUsers();
-            users.RemoveAll(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
-            SaveUsers(users);
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+                var sb = new StringBuilder();
+                foreach (var b in bytes) sb.Append(b.ToString("x2"));
+                return sb.ToString();
+            }
         }
 
-        public static void ResetPassword(string username, string newPassword)
+        // Detect if string is already a SHA256 hash
+        private static bool IsHashed(string input)
         {
-            var users = LoadUsers();
-            var user = users.FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
-            if (user == null) throw new Exception("User not found.");
-            user.PasswordHash = HashPassword(newPassword);
-            SaveUsers(users);
+            if (string.IsNullOrEmpty(input)) return false;
+            return input.Length == 64 && input.All(c => "0123456789abcdef".Contains(char.ToLower(c)));
         }
     }
 }
